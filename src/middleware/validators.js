@@ -42,10 +42,60 @@ const loginRules = [
     .notEmpty().withMessage("Password is required"),
 ];
 
-// ─── Change password rules ────────────────────────────────
+// ─── Change password rules (logged-in user) ───────────────
 const changePasswordRules = [
   body("currentPassword")
     .notEmpty().withMessage("Current password is required"),
+
+  body("newPassword")
+    .notEmpty().withMessage("New password is required")
+    .isLength({ min: 8 }).withMessage("New password must be at least 8 characters")
+    .matches(/[A-Z]/).withMessage("New password must contain at least one uppercase letter")
+    .matches(/[0-9]/).withMessage("New password must contain at least one number"),
+];
+
+// ─── Google auth rules ──────────────────────────────────────
+const googleAuthRules = [
+  body("idToken")
+    .trim()
+    .notEmpty().withMessage("Google idToken is required"),
+];
+
+// ─── Forgot password rules ─────────────────────────────────
+const forgotPasswordRules = [
+  body("email")
+    .trim()
+    .notEmpty().withMessage("Email is required")
+    .isEmail().withMessage("Invalid email address")
+    .normalizeEmail(),
+];
+
+// ─── Verify reset OTP rules ────────────────────────────────
+const verifyResetOtpRules = [
+  body("email")
+    .trim()
+    .notEmpty().withMessage("Email is required")
+    .isEmail().withMessage("Invalid email address")
+    .normalizeEmail(),
+
+  body("code")
+    .trim()
+    .notEmpty().withMessage("Verification code is required")
+    .isLength({ min: 6, max: 6 }).withMessage("Code must be 6 digits"),
+];
+
+// ─── Reset password rules ──────────────────────────────────
+const resetPasswordRules = [
+  body("email")
+    .trim()
+    .notEmpty().withMessage("Email is required")
+    .isEmail().withMessage("Invalid email address")
+    .normalizeEmail(),
+
+  body("code")
+    .trim()
+    .notEmpty().withMessage("Verification code is required")
+    .isLength({ min: 6, max: 6 }).withMessage("Code must be 6 digits"),
 
   body("newPassword")
     .notEmpty().withMessage("New password is required")
@@ -58,5 +108,9 @@ module.exports = {
   validate,
   registerRules,
   loginRules,
+  googleAuthRules,
   changePasswordRules,
+  forgotPasswordRules,
+  verifyResetOtpRules,
+  resetPasswordRules,
 };

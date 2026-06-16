@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   register,
   login,
+  googleAuth,
   refresh,
   logout,
   logoutAll,
@@ -24,6 +25,7 @@ const {
   validate,
   registerRules,
   loginRules,
+  googleAuthRules,
   changePasswordRules,
   forgotPasswordRules,
   verifyResetOtpRules,
@@ -33,6 +35,7 @@ const {
 // ─── Public: registration & login (no verification step) ─
 router.post("/register", registerRules, validate, register);
 router.post("/login", loginRules, validate, login);
+router.post("/google", googleAuthRules, validate, googleAuth);
 router.post("/refresh", refresh);
 
 // ─── Public: forgot password flow ─────────────────────────

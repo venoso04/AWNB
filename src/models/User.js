@@ -28,10 +28,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
     refreshTokens: [
       {
         token: { type: String, required: true },
@@ -70,7 +66,7 @@ userSchema.methods.purgeExpiredTokens = function () {
   this.refreshTokens = this.refreshTokens.filter((t) => t.expiresAt > now);
 };
 
-// ─── Never expose password in JSON output ────────────────
+// ─── Never expose password / refreshTokens in JSON output ─
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;

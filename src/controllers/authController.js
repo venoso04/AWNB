@@ -7,20 +7,17 @@ const {
 } = require("../utils/jwt");
 const { success, error } = require("../utils/response");
 
-// ─── Helpers ──────────────────────────────────────────────
-const getDeviceInfo = (req) => {
-  return req.headers["user-agent"] || "unknown";
-};
+const getDeviceInfo = (req) => req.headers["user-agent"] || "unknown";
 
 // ══════════════════════════════════════════════════════════
 // @route   POST /api/auth/register
 // @access  Public
+// No email verification required — user can use the app immediately.
 // ══════════════════════════════════════════════════════════
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Check duplicate
     const exists = await User.findOne({ email });
     if (exists) {
       return error(res, "Email is already registered", 409);
@@ -28,7 +25,6 @@ const register = async (req, res) => {
 
     const user = await User.create({ name, email, password });
 
-    // Issue tokens immediately after registration
     const accessToken = signAccessToken({ id: user._id });
     const refreshToken = signRefreshToken({ id: user._id });
 
@@ -41,11 +37,7 @@ const register = async (req, res) => {
 
     return success(
       res,
-      {
-        user,
-        accessToken,
-        refreshToken,
-      },
+      { user, accessToken, refreshToken },
       "Registration successful",
       201
     );
@@ -63,7 +55,6 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Select password explicitly (it's hidden by default)
     const user = await User.findOne({ email }).select("+password");
 
     if (!user || !(await user.comparePassword(password))) {
@@ -74,7 +65,6 @@ const login = async (req, res) => {
       return error(res, "Account has been deactivated", 403);
     }
 
-    // Clean up expired tokens before adding new one
     user.purgeExpiredTokens();
 
     const accessToken = signAccessToken({ id: user._id });
@@ -88,15 +78,7 @@ const login = async (req, res) => {
 
     await user.save({ validateBeforeSave: false });
 
-    return success(
-      res,
-      {
-        user,
-        accessToken,
-        refreshToken,
-      },
-      "Login successful"
-    );
+    return success(res, { user, accessToken, refreshToken }, "Login successful");
   } catch (err) {
     console.error("login error:", err);
     return error(res, "Login failed", 500);
@@ -115,7 +97,6 @@ const refresh = async (req, res) => {
       return error(res, "Refresh token required", 400);
     }
 
-    // Verify JWT signature & expiry
     let decoded;
     try {
       decoded = verifyRefreshToken(refreshToken);
@@ -123,15 +104,12 @@ const refresh = async (req, res) => {
       return error(res, "Invalid or expired refresh token", 401);
     }
 
-    // Find user and confirm token is stored (rotation / reuse detection)
     const user = await User.findById(decoded.id);
     if (!user) {
       return error(res, "User not found", 401);
     }
 
-    const storedToken = user.refreshTokens.find(
-      (t) => t.token === refreshToken
-    );
+    const storedToken = user.refreshTokens.find((t) => t.token === refreshToken);
 
     if (!storedToken) {
       // Possible token reuse attack — revoke all tokens
@@ -140,13 +118,9 @@ const refresh = async (req, res) => {
       return error(res, "Refresh token reuse detected. All sessions revoked.", 401);
     }
 
-    // Remove the used refresh token (rotation)
-    user.refreshTokens = user.refreshTokens.filter(
-      (t) => t.token !== refreshToken
-    );
+    user.refreshTokens = user.refreshTokens.filter((t) => t.token !== refreshToken);
     user.purgeExpiredTokens();
 
-    // Issue new pair
     const newAccessToken = signAccessToken({ id: user._id });
     const newRefreshToken = signRefreshToken({ id: user._id });
 
@@ -179,9 +153,7 @@ const logout = async (req, res) => {
     const user = req.user;
 
     if (refreshToken) {
-      user.refreshTokens = user.refreshTokens.filter(
-        (t) => t.token !== refreshToken
-      );
+      user.refreshTokens = user.refreshTokens.filter((t) => t.token !== refreshToken);
     }
 
     await user.save({ validateBeforeSave: false });
@@ -195,7 +167,7 @@ const logout = async (req, res) => {
 
 // ══════════════════════════════════════════════════════════
 // @route   POST /api/auth/logout-all
-// @access  Private  — revoke ALL sessions
+// @access  Private
 // ══════════════════════════════════════════════════════════
 const logoutAll = async (req, res) => {
   try {
@@ -217,7 +189,7 @@ const getMe = async (req, res) => {
 
 // ══════════════════════════════════════════════════════════
 // @route   PATCH /api/auth/me
-// @access  Private — update name / avatar
+// @access  Private
 // ══════════════════════════════════════════════════════════
 const updateMe = async (req, res) => {
   try {
@@ -237,7 +209,7 @@ const updateMe = async (req, res) => {
 
 // ══════════════════════════════════════════════════════════
 // @route   PATCH /api/auth/change-password
-// @access  Private
+// @access  Private — user knows their current password
 // ══════════════════════════════════════════════════════════
 const changePassword = async (req, res) => {
   try {
@@ -250,8 +222,7 @@ const changePassword = async (req, res) => {
     }
 
     user.password = newPassword;
-    // Revoke all existing refresh tokens on password change
-    user.refreshTokens = [];
+    user.refreshTokens = []; // revoke all sessions
     await user.save();
 
     return success(res, {}, "Password changed. Please log in again.");

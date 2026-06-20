@@ -1,96 +1,79 @@
 const axios = require("axios");
-const FormData = require("form-data");
 const fs = require("fs");
+const path = require("path");
+const FormData = require("form-data");
 
-const AI_BASE_URL = process.env.AI_BASE_URL || "https://gabr83-graduationproject.hf.space";
+const AI_BASE_URL =
+  process.env.AI_BASE_URL || "https://gabr83-graduationproject.hf.space";
+
+const ANALYZE_ENDPOINT = `${AI_BASE_URL}/analyze`;
 
 /**
- * Uploads a file to the HuggingFace Gradio Space and retrieves
- * the processed result: topics, summaries, and YouTube videos.
+ * Send a file to the /analyze endpoint and return a normalized
+ * topics array that matches our Document model shape.
  *
- * The Gradio Space exposes a /run/predict endpoint.
- * We POST the file as a base64 data URL which Gradio accepts.
+ * API contract (multipart/form-data POST /analyze):
+ *   Request  → field "file" (binary)
+ *   Response → { total_topics: number, topics: TopicResult[] }
  *
- * @param {string} filePath  - Absolute path to the file on disk
+ * TopicResult → { title, summary, videos: VideoItem[] }
+ * VideoItem   → { title, channel, link, thumbnail }
+ *
+ * @param {string} filePath  - Absolute path to the uploaded file on disk
  * @param {string} mimeType  - MIME type of the file
- * @returns {Promise<Array>} - Array of topic objects { title, summary, videos }
+ * @returns {Promise<Array>} - Normalized topics array for storage in Document
  */
 const processDocument = async (filePath, mimeType) => {
-  // Read file and encode as base64
-  const fileBuffer = fs.readFileSync(filePath);
-  const base64File = fileBuffer.toString("base64");
-  const dataUrl = `data:${mimeType};base64,${base64File}`;
+  const form = new FormData();
 
-  // Gradio predict payload
-  const payload = {
-    data: [dataUrl],
-  };
+  form.append("file", fs.createReadStream(filePath), {
+    filename: path.basename(filePath),
+    contentType: mimeType,
+  });
 
-  const response = await axios.post(
-    `${AI_BASE_URL}/run/predict`,
-    payload,
-    {
-      headers: { "Content-Type": "application/json" },
-      timeout: 300000, // 5 minutes — AI processing can be slow
-    }
-  );
-
-  const result = response.data;
-
-  // The Space returns data array — first element is our structured output
-  if (!result || !result.data || !result.data[0]) {
-    throw new Error("Unexpected response structure from AI service");
-  }
-
-  return parseAIResponse(result.data[0]);
-};
-
-/**
- * Parses the AI service response into the topic array shape
- * expected by our Document model.
- *
- * Handles both:
- *   - Structured JSON output (preferred)
- *   - Raw text output (fallback parsing)
- */
-const parseAIResponse = (rawOutput) => {
-  // If the space returns JSON directly
-  if (typeof rawOutput === "object" && Array.isArray(rawOutput)) {
-    return rawOutput.map((topic) => ({
-      title: topic.title || "Educational Topic",
-      summary: topic.summary || "",
-      videos: (topic.videos || []).map((v) => ({
-        title: v.title || "",
-        channel: v.channel || "",
-        link: v.link || "",
-        thumbnail: v.thumbnail || "",
-        videoId: extractVideoId(v.link || ""),
-      })),
-    }));
-  }
-
-  // If the space returns a JSON string
-  if (typeof rawOutput === "string") {
-    try {
-      const parsed = JSON.parse(rawOutput);
-      return parseAIResponse(parsed);
-    } catch (_) {
-      // Fall through to text parsing
-    }
-  }
-
-  // Minimal fallback: wrap the raw text as a single topic
-  return [
-    {
-      title: "Processed Content",
-      summary: String(rawOutput).slice(0, 2000),
-      videos: [],
+  const response = await axios.post(ANALYZE_ENDPOINT, form, {
+    headers: {
+      ...form.getHeaders(),
     },
-  ];
+    timeout: 300000, // 5 minutes — AI processing can be slow
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  });
+
+  const data = response.data;
+
+  // Validate the response matches the expected schema
+  if (
+    !data ||
+    typeof data.total_topics !== "number" ||
+    !Array.isArray(data.topics)
+  ) {
+    throw new Error(
+      `Unexpected AI response structure: ${JSON.stringify(data).slice(0, 200)}`
+    );
+  }
+
+  if (data.topics.length === 0) {
+    throw new Error("AI returned no topics from the document");
+  }
+
+  // Normalize to our internal shape (add videoId extracted from link)
+  return data.topics.map((topic) => ({
+    title: topic.title || "Educational Topic",
+    summary: topic.summary || "",
+    videos: (topic.videos || []).map((v) => ({
+      title: v.title || "",
+      channel: v.channel || "",
+      link: v.link || "",
+      thumbnail: v.thumbnail || "",
+      videoId: extractVideoId(v.link || ""),
+    })),
+  }));
 };
 
 /**
- * Extract YouTube video ID from a watch URL
+ * Extract YouTube video ID from a watch URL.
+ * e.g. https://www.youtube.com/watch?v=abc123 → "abc123"
  */
 const extractVideoId = (url) => {
   const match = url.match(/[?&]v=([^&]+)/);
@@ -98,7 +81,7 @@ const extractVideoId = (url) => {
 };
 
 /**
- * Health-check the AI service
+ * Ping the root endpoint to check if the AI service is reachable.
  */
 const pingAI = async () => {
   try {

@@ -2,13 +2,6 @@ const axios = require("axios");
 
 const YT_BASE = "https://www.googleapis.com/youtube/v3";
 
-/**
- * Search YouTube for videos related to a query.
- *
- * @param {string} query       - Search term (usually a topic title)
- * @param {number} maxResults  - How many videos to return (default 3)
- * @returns {Promise<Array>}   - Array of video objects
- */
 const searchVideos = async (query, maxResults = 3) => {
   const apiKey = process.env.YOUTUBE_API_KEY;
 

@@ -1,5 +1,4 @@
 const fs = require("fs");
-const path = require("path");
 const Document = require("../models/Document");
 const { getMimeFileType } = require("../middleware/upload");
 const { processDocument } = require("../services/aiService");
@@ -19,7 +18,6 @@ const uploadDocument = async (req, res) => {
   try {
     const fileType = getMimeFileType(req.file.mimetype);
 
-    // Create DB record immediately — status: pending
     doc = await Document.create({
       user: req.user._id,
       originalName: req.file.originalname,
@@ -29,11 +27,9 @@ const uploadDocument = async (req, res) => {
       status: "pending",
     });
 
-    // Respond immediately so the client gets the doc ID
-    // Processing happens asynchronously below
     success(res, { document: doc }, "File uploaded, processing started", 202);
 
-    // ── Async processing ──────────────────────────────────
+    // ── Async processing (response already sent above) ────
     doc.status = "processing";
     doc.processingStartedAt = new Date();
     await doc.save();
@@ -41,17 +37,15 @@ const uploadDocument = async (req, res) => {
     let topics;
 
     try {
-      // Send file to HuggingFace AI Space
       topics = await processDocument(req.file.path, req.file.mimetype);
     } catch (aiErr) {
       console.error("AI processing error:", aiErr.message);
       doc.status = "failed";
       doc.errorMessage = aiErr.message;
       await doc.save();
-      return; // Response already sent
+      return;
     }
 
-    // Enrich each topic with YouTube videos if AI didn't already include them
     const enrichedTopics = await Promise.all(
       topics.map(async (topic) => {
         let videos = topic.videos || [];
@@ -70,7 +64,6 @@ const uploadDocument = async (req, res) => {
     console.log(`✅ Document ${doc._id} processed: ${enrichedTopics.length} topics`);
   } catch (err) {
     console.error("uploadDocument error:", err);
-    // Update status to failed if we have a doc record
     if (doc && doc._id) {
       try {
         await Document.findByIdAndUpdate(doc._id, {
@@ -84,7 +77,7 @@ const uploadDocument = async (req, res) => {
 
 // ══════════════════════════════════════════════════════════
 // @route   GET /api/documents
-// @access  Private — list user's documents (paginated)
+// @access  Private
 // ══════════════════════════════════════════════════════════
 const listDocuments = async (req, res) => {
   try {
@@ -97,7 +90,7 @@ const listDocuments = async (req, res) => {
 
     const [documents, total] = await Promise.all([
       Document.find(filter)
-        .select("-storagePath -topics")   // topics can be large — omit in list view
+        .select("-storagePath -topics")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -106,12 +99,7 @@ const listDocuments = async (req, res) => {
 
     return success(res, {
       documents,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
     console.error("listDocuments error:", err);
@@ -121,7 +109,7 @@ const listDocuments = async (req, res) => {
 
 // ══════════════════════════════════════════════════════════
 // @route   GET /api/documents/:id
-// @access  Private — full document with topics
+// @access  Private
 // ══════════════════════════════════════════════════════════
 const getDocument = async (req, res) => {
   try {
@@ -143,7 +131,7 @@ const getDocument = async (req, res) => {
 
 // ══════════════════════════════════════════════════════════
 // @route   GET /api/documents/:id/status
-// @access  Private — lightweight poll endpoint
+// @access  Private
 // ══════════════════════════════════════════════════════════
 const getDocumentStatus = async (req, res) => {
   try {
@@ -177,7 +165,6 @@ const deleteDocument = async (req, res) => {
       return error(res, "Document not found", 404);
     }
 
-    // Delete file from disk
     if (doc.storagePath && fs.existsSync(doc.storagePath)) {
       fs.unlinkSync(doc.storagePath);
     }
@@ -193,7 +180,7 @@ const deleteDocument = async (req, res) => {
 
 // ══════════════════════════════════════════════════════════
 // @route   GET /api/documents/:id/topics/:topicIndex/videos/refresh
-// @access  Private — re-fetch YouTube videos for one topic
+// @access  Private
 // ══════════════════════════════════════════════════════════
 const refreshTopicVideos = async (req, res) => {
   try {

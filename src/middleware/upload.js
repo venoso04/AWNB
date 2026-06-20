@@ -5,7 +5,6 @@ const { error } = require("../utils/response");
 
 const MAX_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || "20", 10);
 
-// ─── Allowed MIME types ───────────────────────────────────
 const ALLOWED_MIMES = {
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -18,7 +17,6 @@ const ALLOWED_MIMES = {
   "image/jpg": "image",
 };
 
-// ─── Storage: keep original extension, rename with UUID ──
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, process.env.UPLOAD_DIR || "uploads");
@@ -29,7 +27,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// ─── Filter ───────────────────────────────────────────────
 const fileFilter = (req, file, cb) => {
   if (ALLOWED_MIMES[file.mimetype]) {
     cb(null, true);
@@ -50,14 +47,8 @@ const upload = multer({
   limits: { fileSize: MAX_SIZE_MB * 1024 * 1024 },
 });
 
-/**
- * Maps a MIME type string to the fileType enum used in the Document model
- */
 const getMimeFileType = (mimetype) => ALLOWED_MIMES[mimetype] || "unknown";
 
-/**
- * Express error handler for multer errors
- */
 const handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_FILE_SIZE") {
